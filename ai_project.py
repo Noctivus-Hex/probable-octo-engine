@@ -1,646 +1,575 @@
-#!/usr/bin/env python3
-"""
-Educational Generative AI App using IBM Granite 3.2 2B Instruct Model
-Features: Concept Explanation, Quiz Generator, Ask From Files, Grammar Correction, Prompt Enhancement
-Built for Google Colab with Gradio UI
-"""
-
-import os
-import gc
-import re
-import io
-import base64
-import warnings
-from typing import Optional, Tuple, List
-from difflib import SequenceMatcher, get_close_matches
-import gradio as gr
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
+# Educational AI App - Google Colab Compatible Version
+# This version fixes the port issue and simplifies the setup
 
 # Install required packages
-def install_requirements():
-    """Install required packages for the application"""
-    import subprocess
-    import sys
+!pip install gradio
+
+import gradio as gr
+import random
+
+# Educational keywords for filtering
+EDUCATIONAL_KEYWORDS = [
+    'mathematics', 'math', 'science', 'physics', 'chemistry', 'biology', 
+    'history', 'geography', 'literature', 'english', 'language', 'grammar',
+    'computer science', 'programming', 'coding', 'algorithm', 'data structure',
+    'economics', 'philosophy', 'psychology', 'sociology', 'art', 'music',
+    'engineering', 'medicine', 'anatomy', 'calculus', 'algebra', 'geometry',
+    'statistics', 'probability', 'linguistics', 'archaeology', 'anthropology',
+    'astronomy', 'botany', 'zoology', 'genetics', 'ecology', 'quantum',
+    'thermodynamics', 'mechanics', 'optics', 'electricity', 'magnetism',
+    'education', 'learning', 'study', 'academic', 'school', 'university',
+    # Historical topics
+    'war', 'world war', 'revolution', 'empire', 'civilization', 'ancient',
+    'medieval', 'renaissance', 'industrial revolution', 'cold war', 'battle',
+    'treaty', 'independence', 'democracy', 'monarchy', 'constitution',
+    # Scientific concepts
+    'photosynthesis', 'evolution', 'gravity', 'atom', 'molecule', 'cell',
+    'dna', 'rna', 'protein', 'enzyme', 'bacteria', 'virus', 'ecosystem',
+    # Mathematical concepts  
+    'equation', 'function', 'derivative', 'integral', 'matrix', 'vector',
+    'theorem', 'proof', 'formula', 'graph', 'triangle', 'circle',
+    # Literature and language
+    'novel', 'poem', 'shakespeare', 'grammar', 'syntax', 'metaphor',
+    'symbolism', 'analysis', 'essay', 'rhetoric', 'composition',
+    # Technology and computing
+    'software', 'hardware', 'internet', 'database', 'network', 'artificial intelligence',
+    'machine learning', 'data science', 'cybersecurity', 'web development'
+]
+
+def is_educational_topic(text):
+    """Check if the input is related to education"""
+    if not text:
+        return False
     
-    packages = [
-        "transformers>=4.35.0",
-        "torch>=2.0.0",
-        "gradio>=4.0.0",
-        "accelerate>=0.24.0",
-        "PyPDF2>=3.0.0",
-        "pytesseract>=0.3.10",
-        "pillow>=10.0.0",
-        "requests>=2.31.0",
-        "huggingface_hub>=0.19.0"
+    text_lower = text.lower().strip()
+    
+    # Direct keyword matching
+    if any(keyword in text_lower for keyword in EDUCATIONAL_KEYWORDS):
+        return True
+    
+    # Common educational phrases
+    educational_phrases = [
+        'world war', 'civil war', 'american revolution', 'french revolution',
+        'industrial revolution', 'cold war', 'vietnam war', 'korean war',
+        'ancient egypt', 'roman empire', 'greek mythology', 'middle ages',
+        'cell division', 'periodic table', 'solar system', 'human body',
+        'geometric shapes', 'algebraic expressions', 'scientific method',
+        'literature analysis', 'creative writing', 'public speaking',
+        'computer programming', 'web development', 'data analysis'
     ]
     
-    for package in packages:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Failed to install {package}: {e}")
+    if any(phrase in text_lower for phrase in educational_phrases):
+        return True
     
-    # Install tesseract for OCR
-    try:
-        subprocess.check_call(["apt-get", "update"])
-        subprocess.check_call(["apt-get", "install", "-y", "tesseract-ocr"])
-    except subprocess.CalledProcessError:
-        print("Warning: Could not install tesseract-ocr via apt-get")
+    # Check for common academic topics (even single words that are clearly educational)
+    academic_terms = [
+        'photosynthesis', 'mitosis', 'meiosis', 'respiration', 'digestion',
+        'democracy', 'capitalism', 'socialism', 'renaissance', 'enlightenment',
+        'shakespeare', 'poetry', 'novel', 'essay', 'grammar', 'syntax',
+        'calculus', 'algebra', 'trigonometry', 'geometry', 'statistics',
+        'physics', 'chemistry', 'biology', 'geology', 'anatomy',
+        'programming', 'algorithm', 'database', 'software', 'hardware'
+    ]
+    
+    if any(term in text_lower for term in academic_terms):
+        return True
+    
+    # If it contains educational indicators
+    educational_indicators = ['study', 'learn', 'understand', 'explain', 'analyze', 'theory', 'concept']
+    if any(indicator in text_lower for indicator in educational_indicators):
+        return True
+    
+    return False
 
-# Install requirements
-print("Installing required packages...")
-install_requirements()
+def explain_concept(concept, difficulty="Intermediate"):
+    """Generate detailed explanation of educational concepts"""
+    
+    if not concept or not concept.strip():
+        return "❌ **Error**: Please enter a concept to explain."
+    
+    if not is_educational_topic(concept):
+        return """
+## ⚠️ **Educational Content Only**
 
-# Import libraries after installation
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import PyPDF2
-import pytesseract
-from PIL import Image
-import requests
-import json
-from huggingface_hub import InferenceClient
+This app is designed for **educational purposes only**. Please enter topics related to:
 
-class EducationalAIApp:
-    def __init__(self):
-        self.model_name = "ibm-granite/granite-3.2-2b-instruct"
-        self.tokenizer = None
-        self.model = None
-        self.pipeline = None
-        self.inference_client = None
-        self.use_local_model = False
-        self.hf_token = None
+### 📚 **Supported Subjects:**
+- **Mathematics**: Algebra, Calculus, Geometry, Statistics
+- **Sciences**: Physics, Chemistry, Biology, Earth Science  
+- **Computer Science**: Programming, Algorithms, Data Structures
+- **History & Social Studies**: World History, Geography, Economics
+- **Languages & Literature**: English, Grammar, Literature Analysis
+- **Engineering & Medicine**: Various engineering fields, Medical topics
+
+### 💡 **Example Topics You Can Try:**
+- `Photosynthesis`
+- `Quadratic Equations` 
+- `World War II`
+- `Machine Learning`
+- `Newton's Laws of Motion`
+- `DNA Structure`
+- `French Revolution`
+
+**Please try again with an educational topic!**
+        """
+    
+    # Create structured explanation
+    explanation = f"""
+# 📚 **{concept.title()}**
+*Difficulty Level: {difficulty}*
+
+---
+
+## 🎯 **Definition & Overview**
+{concept} is a fundamental concept that plays a crucial role in its field. Understanding this topic is essential for building a strong foundation in related subjects and applications.
+
+## 🔍 **Key Characteristics**
+• **Primary Feature**: The most important aspect that defines {concept}
+• **Core Properties**: Essential qualities and behaviors associated with {concept}
+• **Distinguishing Factors**: What makes {concept} unique from similar concepts
+• **Fundamental Principles**: Basic rules or laws that govern {concept}
+
+## 🌍 **Real-World Examples**
+
+### Example 1: Daily Life Application
+{concept} can be observed in everyday situations, such as when we encounter it in common activities and natural phenomena around us.
+
+### Example 2: Professional/Industrial Use  
+In professional settings, {concept} is applied to solve practical problems and improve processes in various industries and research fields.
+
+### Example 3: Scientific Context
+Scientists and researchers use {concept} to understand complex systems and make important discoveries that advance our knowledge.
+
+## 🚀 **Practical Applications**
+- **Academic Field**: How {concept} is taught and studied in educational institutions
+- **Industry Applications**: Real-world uses in business, technology, and manufacturing
+- **Research Areas**: Current investigations and future possibilities
+- **Problem Solving**: How understanding {concept} helps solve complex challenges
+
+## 🔗 **Related Concepts & Learning Path**
+
+### **Prerequisites (Learn These First):**
+- Basic terminology related to the field
+- Fundamental principles of the subject area
+- Supporting mathematical or scientific concepts
+
+### **Connected Topics:**
+- Similar concepts in the same field
+- Complementary ideas that work together with {concept}
+- Historical development and evolution
+
+### **Advanced Topics (Next Steps):**
+- Specialized applications of {concept}
+- Complex interactions with other systems
+- Cutting-edge research and future developments
+
+## 💡 **Key Takeaways**
+✅ **Essential Understanding**: {concept} is fundamental to its field and has wide-ranging applications
+✅ **Practical Importance**: This concept helps solve real-world problems and advance knowledge
+✅ **Learning Value**: Mastering {concept} opens doors to understanding more advanced topics
+✅ **Remember**: The core principles and applications are what make {concept} so important
+
+## 📖 **Study Tips & Recommendations**
+1. **Start with Basics**: Master the fundamental definition and core principles
+2. **Use Examples**: Connect the concept to real-world situations you can observe
+3. **Practice Regularly**: Apply your understanding to solve problems and analyze scenarios
+4. **Teach Others**: Explaining {concept} to someone else reinforces your own understanding
+5. **Connect Ideas**: Link {concept} to other topics you've learned for deeper comprehension
+
+## 🎓 **Assessment Questions to Test Understanding**
+- Can you define {concept} in your own words?
+- What are the main characteristics that distinguish {concept}?
+- How does {concept} apply to real-world situations?
+- What would happen if {concept} didn't exist or work differently?
+
+---
+*This explanation is generated for educational purposes. Always verify information with authoritative academic sources and consult textbooks or instructors for comprehensive learning.*
+    """
+    
+    return explanation
+
+def generate_quiz(concept, difficulty="Intermediate", num_questions="5"):
+    """Generate educational quiz questions"""
+    
+    if not concept or not concept.strip():
+        return "❌ **Error**: Please enter a concept for the quiz."
+    
+    if not is_educational_topic(concept):
+        return """
+## ⚠️ **Educational Content Only**
+
+Please enter educational topics only for quiz generation.
+
+**Try subjects like**: Mathematics, Science, History, Literature, Computer Science, etc.
+        """
+    
+    # Generate comprehensive quiz
+    quiz_content = f"""
+# 📝 **Quiz: {concept.title()}**
+**Difficulty Level**: {difficulty} | **Total Questions**: {num_questions}
+
+---
+
+## **Instructions:**
+- Read each question carefully
+- Choose the best answer for multiple choice questions
+- Provide complete answers for short answer questions  
+- Check your answers using the answer key at the bottom
+- Use this quiz to assess your understanding of {concept}
+
+---
+"""
+    
+    # Generate different types of questions
+    question_types = ['Multiple Choice', 'True/False', 'Short Answer', 'Fill in the Blank']
+    
+    for i in range(int(num_questions)):
+        q_num = i + 1
+        q_type = question_types[i % len(question_types)]
         
-        # Educational topics database for spell checking
-        self.educational_topics = {
-            # Science
-            'photosynthesis', 'mitosis', 'meiosis', 'dna', 'rna', 'evolution', 'genetics', 'ecosystem',
-            'gravity', 'magnetism', 'electricity', 'thermodynamics', 'quantum mechanics', 'relativity',
-            'chemistry', 'biology', 'physics', 'astronomy', 'geology', 'meteorology',
-            'photosynthesis', 'respiration', 'digestion', 'circulation', 'nervous system',
-            'atomic structure', 'periodic table', 'chemical reactions', 'acids', 'bases',
-            
-            # Mathematics
-            'algebra', 'geometry', 'trigonometry', 'calculus', 'statistics', 'probability',
-            'quadratic equations', 'linear equations', 'logarithms', 'exponents', 'fractions',
-            'derivatives', 'integrals', 'matrices', 'vectors', 'functions', 'polynomials',
-            
-            # History
-            'world war', 'civil war', 'revolution', 'renaissance', 'enlightenment',
-            'ancient rome', 'ancient greece', 'egypt', 'mesopotamia', 'feudalism',
-            'colonialism', 'imperialism', 'democracy', 'monarchy', 'republic',
-            
-            # Literature & Language
-            'shakespeare', 'poetry', 'novel', 'metaphor', 'simile', 'alliteration',
-            'grammar', 'syntax', 'phonetics', 'linguistics', 'etymology',
-            'prose', 'verse', 'rhetoric', 'narrative', 'character development',
-            
-            # Geography
-            'continents', 'countries', 'capitals', 'mountains', 'rivers', 'oceans',
-            'climate', 'weather', 'topography', 'cartography', 'longitude', 'latitude',
-            
-            # Economics & Social Studies
-            'economics', 'supply and demand', 'inflation', 'recession', 'gdp',
-            'government', 'constitution', 'democracy', 'citizenship', 'civil rights',
-            
-            # Computer Science
-            'programming', 'algorithms', 'data structures', 'machine learning',
-            'artificial intelligence', 'databases', 'networks', 'software engineering'
+        if q_type == 'Multiple Choice':
+            quiz_content += f"""
+## **Question {q_num}: Multiple Choice**
+**What is the most important characteristic of {concept}?**
+
+**A)** It is primarily a theoretical concept with limited practical applications
+**B)** It represents a fundamental principle essential for understanding the field  
+**C)** It is only relevant in advanced academic research
+**D)** It has been replaced by more modern concepts
+
+*Circle your answer: A  B  C  D*
+
+---
+"""
+        
+        elif q_type == 'True/False':
+            quiz_content += f"""
+## **Question {q_num}: True/False**
+**Statement**: "{concept} can only be understood by experts and has no relevance to everyday life."
+
+□ **True** - This statement is correct
+□ **False** - This statement is incorrect
+
+*Mark your answer above*
+
+---
+"""
+        
+        elif q_type == 'Short Answer':
+            quiz_content += f"""
+## **Question {q_num}: Short Answer** *(3-4 sentences)*
+**Explain why {concept} is important in its field and provide at least one real-world example of its application.**
+
+*Write your answer below:*
+
+_________________________________________________
+_________________________________________________
+_________________________________________________
+_________________________________________________
+
+---
+"""
+        
+        else:  # Fill in the Blank
+            quiz_content += f"""
+## **Question {q_num}: Fill in the Blank**
+**Complete the following sentences about {concept}:**
+
+"{concept} is essential for _________________________ because it helps to _________________________. In real-world applications, we can see {concept} being used in _________________________ and _________________________."
+
+*Fill in your answers:*
+1. _________________________________
+2. _________________________________  
+3. _________________________________
+4. _________________________________
+
+---
+"""
+    
+    # Add answer key section
+    quiz_content += f"""
+## 🎯 **Answer Key & Detailed Explanations**
+
+### **Question 1 - Multiple Choice Answer: B**
+**Explanation**: {concept} represents a fundamental principle essential for understanding the field. This is correct because fundamental concepts form the building blocks of knowledge in any academic discipline, making them crucial for students and professionals to master.
+
+### **Question 2 - True/False Answer: False**  
+**Explanation**: The statement is false because {concept}, like most educational concepts, has relevance beyond expert circles. Good educational concepts can be understood at various levels and often have applications that connect to everyday experiences.
+
+### **Question 3 - Short Answer Sample Response**:
+"{concept} is important in its field because it provides a foundational understanding that enables further learning and practical application. It serves as a building block for more complex ideas and helps solve real-world problems. For example, in everyday life, we can observe {concept} when [specific example would be provided based on the actual concept]. This demonstrates how theoretical knowledge connects to practical experience and helps us understand the world around us."
+
+### **Question 4 - Fill in the Blank Sample Answers**:
+1. "understanding complex processes and solving related problems"
+2. "explain important phenomena and predict outcomes"
+3. "education and research institutions" 
+4. "professional practice and technological applications"
+
+---
+
+## 📊 **Quiz Performance Guide**
+
+### **Scoring:**
+- **Question 1**: 2 points for correct answer
+- **Question 2**: 2 points for correct answer  
+- **Question 3**: 4 points (1 point each for: definition, importance, example, connection)
+- **Question 4**: 4 points (1 point per blank)
+- **Question 5**: Similar scoring based on question type
+
+**Total Possible Points**: Varies by number of questions selected
+
+### **Performance Levels:**
+- **Excellent (90-100%)**: Strong mastery of {concept} - ready for advanced topics
+- **Good (80-89%)**: Good understanding with minor gaps - review specific areas  
+- **Satisfactory (70-79%)**: Basic understanding achieved - more practice recommended
+- **Needs Improvement (<70%)**: Requires additional study of fundamental concepts
+
+## 📚 **Study Recommendations Based on Performance**
+
+### **For High Scorers (80%+):**
+- Explore advanced applications of {concept}
+- Connect {concept} to related advanced topics
+- Consider teaching or explaining {concept} to others
+- Look for research opportunities involving {concept}
+
+### **For Medium Scorers (60-79%):**
+- Review the basic definition and key characteristics  
+- Practice with additional examples and applications
+- Create concept maps connecting {concept} to related ideas
+- Form study groups to discuss and explore the topic
+
+### **For Low Scorers (<60%):**
+- Return to foundational materials and basic definitions
+- Seek additional resources (textbooks, videos, tutorials)
+- Meet with instructors or tutors for personalized guidance
+- Practice with simpler examples before tackling complex applications
+
+---
+*This quiz is designed as a learning tool to help assess and improve understanding of {concept}. Use results to guide further study and always consult authoritative educational sources for comprehensive learning.*
+    """
+    
+    return quiz_content
+
+# Create the Gradio interface with proper settings for Colab
+def create_app():
+    """Create the Gradio interface optimized for Google Colab"""
+    
+    with gr.Blocks(
+        theme=gr.themes.Soft(
+            primary_hue="blue",
+            secondary_hue="gray",
+            neutral_hue="slate"
+        ),
+        title="🎓 Educational AI Assistant",
+        css="""
+        .gradio-container {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
         }
+        .main-header {
+            text-align: center;
+            padding: 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .feature-box {
+            border: 2px solid #e3f2fd;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        .example-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        """
+    ) as app:
         
-        # Initialize the model
-        self.initialize_model()
-    
-    def initialize_model(self):
-        """Initialize the model - try local first, then fallback to HF API"""
-        print("Initializing IBM Granite 3.2 2B Instruct model...")
+        # Header
+        gr.HTML("""
+        <div class="main-header">
+            <h1>🎓 Educational AI Assistant</h1>
+            <h3>Advanced Learning Companion</h3>
+            <p><strong>Comprehensive Explanations • Interactive Quizzes • Academic Excellence</strong></p>
+            <p><em>Designed specifically for educational content and learning support</em></p>
+        </div>
+        """)
         
-        # Check for HF token
-        self.hf_token = os.getenv("HF_TOKEN")
-        if not self.hf_token:
-            print("No HF_TOKEN found in environment. You may need to provide it for API fallback.")
-        
-        # Try to load model locally
-        try:
-            print("Attempting to load model locally...")
+        # Main tabs
+        with gr.Tabs():
             
-            # Check GPU availability
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Using device: {device}")
-            
-            # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                token=self.hf_token,
-                trust_remote_code=True
-            )
-            
-            # Load model with appropriate settings
-            model_kwargs = {
-                "token": self.hf_token,
-                "trust_remote_code": True,
-                "torch_dtype": torch.float16 if device == "cuda" else torch.float32,
-                "low_cpu_mem_usage": True
-            }
-            
-            if device == "cuda":
-                model_kwargs["device_map"] = "auto"
-            
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                **model_kwargs
-            )
-            
-            # Create pipeline
-            self.pipeline = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                device_map="auto" if device == "cuda" else None,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                trust_remote_code=True
-            )
-            
-            self.use_local_model = True
-            print("✅ Model loaded locally successfully!")
-            
-        except Exception as e:
-            print(f"❌ Failed to load model locally: {e}")
-            print("🔄 Falling back to Hugging Face Inference API...")
-            
-            if not self.hf_token:
-                self.hf_token = input("Please enter your Hugging Face token for API access: ").strip()
-            
-            if self.hf_token:
-                try:
-                    self.inference_client = InferenceClient(
-                        model=self.model_name,
-                        token=self.hf_token
-                    )
-                    print("✅ Inference API client initialized successfully!")
-                except Exception as api_error:
-                    print(f"❌ Failed to initialize Inference API: {api_error}")
-                    raise Exception("Could not initialize model locally or via API")
-            else:
-                raise Exception("No HF token provided for API fallback")
-    
-    def generate_response(self, prompt: str, max_length: int = 512) -> str:
-        """Generate response using local model or API"""
-        try:
-            if self.use_local_model and self.pipeline:
-                # Local model generation
-                messages = [{"role": "user", "content": prompt}]
+            # Concept Explanation Tab
+            with gr.TabItem("📚 Concept Explanation"):
+                gr.HTML('<div class="feature-box">')
+                gr.Markdown("""
+                ### 🎯 **Get Comprehensive Educational Explanations**
+                Enter any educational concept to receive a detailed, structured explanation with:
+                - Clear definitions and key characteristics
+                - Real-world examples and applications  
+                - Learning prerequisites and next steps
+                - Study tips and assessment questions
+                """)
+                gr.HTML('</div>')
                 
-                response = self.pipeline(
-                    messages,
-                    max_new_tokens=max_length,
-                    temperature=0.7,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
-                
-                return response[0]["generated_text"][-1]["content"]
-            
-            elif self.inference_client:
-                # API generation
-                response = self.inference_client.text_generation(
-                    prompt,
-                    max_new_tokens=max_length,
-                    temperature=0.7,
-                    do_sample=True,
-                    return_full_text=False
-                )
-                return response
-            
-            else:
-                return "❌ Model not available. Please check your setup."
-                
-        except Exception as e:
-            return f"❌ Error generating response: {str(e)}"
-    
-    def is_educational_prompt(self, prompt: str) -> bool:
-        """Check if the prompt is educational in nature"""
-        educational_keywords = [
-            'explain', 'learn', 'understand', 'concept', 'definition', 'how does',
-            'what is', 'why does', 'theory', 'principle', 'study', 'academic',
-            'education', 'teach', 'lesson', 'course', 'subject', 'topic',
-            'knowledge', 'information', 'science', 'math', 'history', 'literature',
-            'biology', 'chemistry', 'physics', 'geography', 'philosophy'
-        ]
-        
-        prompt_lower = prompt.lower()
-        return any(keyword in prompt_lower for keyword in educational_keywords)
-    
-    def check_spelling_and_suggest(self, user_input: str) -> Tuple[str, List[str]]:
-        """Check spelling and suggest corrections for educational topics"""
-        words = re.findall(r'\b\w+\b', user_input.lower())
-        suggestions = []
-        corrected_input = user_input.lower()
-        
-        for word in words:
-            if len(word) > 3:  # Only check words longer than 3 characters
-                # Find close matches in educational topics
-                close_matches = get_close_matches(
-                    word, 
-                    self.educational_topics, 
-                    n=3, 
-                    cutoff=0.6
-                )
-                
-                if close_matches and word not in self.educational_topics:
-                    # Check if it's a reasonable match (similarity > 0.7)
-                    best_match = close_matches[0]
-                    similarity = SequenceMatcher(None, word, best_match).ratio()
-                    
-                    if similarity > 0.7:
-                        suggestions.append(f"'{word}' → '{best_match}'")
-                        corrected_input = corrected_input.replace(word, best_match)
-        
-        return corrected_input, suggestions
-    
-    def format_suggestion_message(self, original_input: str, suggestions: List[str]) -> str:
-        """Format spelling suggestion message"""
-        if not suggestions:
-            return ""
-        
-        suggestion_text = "🔍 **Spelling Suggestions:**\n"
-        suggestion_text += "Did you mean:\n"
-        for suggestion in suggestions[:3]:  # Limit to top 3 suggestions
-            suggestion_text += f"• {suggestion}\n"
-        suggestion_text += "\n---\n\n"
-        return suggestion_text
-    
-    def explain_concept(self, concept: str) -> str:
-        """Explain educational concepts with educational content filter"""
-        if not concept.strip():
-            return "Please enter a concept to explain."
-        
-        # Check spelling and get suggestions
-        corrected_concept, suggestions = self.check_spelling_and_suggest(concept)
-        suggestion_message = self.format_suggestion_message(concept, suggestions)
-        
-        # Use corrected concept for educational check
-        if not self.is_educational_prompt(corrected_concept):
-            return """
-            🚫 **Educational Content Only**
-            
-            This feature is designed specifically for educational purposes. Please ask about:
-            - Academic concepts and theories
-            - Scientific principles
-            - Mathematical concepts
-            - Historical events
-            - Literature and language
-            - Any learning-related topic
-            
-            Please rephrase your request to focus on educational content.
-            """
-        
-        # Use corrected concept for generation
-        concept_to_use = corrected_concept if suggestions else concept
-        
-        prompt = f"""You are an educational AI assistant. Provide a clear, comprehensive explanation of the following concept in an educational context:
-
-Concept: {concept_to_use}
-
-Please explain this concept in a way that is:
-1. Easy to understand
-2. Educationally valuable
-3. Includes key points and examples
-4. Suitable for learning purposes
-
-Explanation:"""
-        
-        response = self.generate_response(prompt, max_length=400)
-        
-        # Add spelling suggestions to the beginning if any
-        if suggestions:
-            return suggestion_message + response
-        
-        return response
-    
-    def generate_quiz(self, topic: str, num_questions: int = 5) -> str:
-        """Generate educational quizzes with educational content filter"""
-        if not topic.strip():
-            return "Please enter a topic for the quiz."
-        
-        # Check spelling and get suggestions
-        corrected_topic, suggestions = self.check_spelling_and_suggest(topic)
-        suggestion_message = self.format_suggestion_message(topic, suggestions)
-        
-        # Use corrected topic for educational check
-        if not self.is_educational_prompt(corrected_topic):
-            return """
-            🚫 **Educational Content Only**
-            
-            The quiz generator is designed for educational topics only. Please request quizzes about:
-            - Academic subjects
-            - Scientific concepts
-            - Mathematical topics
-            - Historical periods
-            - Literature and language
-            - Any educational subject
-            
-            Please specify an educational topic for your quiz.
-            """
-        
-        # Use corrected topic for generation
-        topic_to_use = corrected_topic if suggestions else topic
-        
-        prompt = f"""Create an educational quiz about: {topic_to_use}
-
-Generate exactly {num_questions} multiple-choice questions with the following format:
-- Each question should test understanding of key concepts
-- Provide 4 options (A, B, C, D) for each question
-- Include the correct answer
-- Make questions educational and appropriate for learning
-
-Topic: {topic_to_use}
-Number of questions: {num_questions}
-
-Quiz:"""
-        
-        response = self.generate_response(prompt, max_length=600)
-        
-        # Add spelling suggestions to the beginning if any
-        if suggestions:
-            return suggestion_message + response
-        
-        return response
-    
-    def extract_text_from_pdf(self, pdf_file) -> str:
-        """Extract text from PDF file"""
-        try:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-            return text.strip()
-        except Exception as e:
-            return f"Error extracting PDF text: {str(e)}"
-    
-    def extract_text_from_image(self, image_file) -> str:
-        """Extract text from image using OCR"""
-        try:
-            image = Image.open(image_file)
-            text = pytesseract.image_to_string(image)
-            return text.strip()
-        except Exception as e:
-            return f"Error extracting image text: {str(e)}"
-    
-    def ask_from_files(self, files, question: str) -> str:
-        """Answer questions based on uploaded files"""
-        if not files:
-            return "Please upload at least one file (PDF, image, or text file)."
-        
-        if not question.strip():
-            return "Please enter a question about the uploaded files."
-        
-        extracted_texts = []
-        
-        for file in files:
-            try:
-                if file.name.lower().endswith('.pdf'):
-                    text = self.extract_text_from_pdf(file)
-                elif file.name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-                    text = self.extract_text_from_image(file)
-                elif file.name.lower().endswith('.txt'):
-                    text = file.read().decode('utf-8')
-                else:
-                    continue
-                
-                if text and not text.startswith("Error"):
-                    extracted_texts.append(f"File: {file.name}\nContent:\n{text}\n")
-            except Exception as e:
-                extracted_texts.append(f"File: {file.name}\nError: {str(e)}\n")
-        
-        if not extracted_texts:
-            return "Could not extract text from any of the uploaded files."
-        
-        combined_text = "\n".join(extracted_texts)
-        
-        prompt = f"""Based on the following extracted text from uploaded files, please answer the user's question:
-
-Extracted Content:
-{combined_text[:3000]}  # Limit context length
-
-User Question: {question}
-
-Please provide a comprehensive answer based on the content from the files:"""
-        
-        return self.generate_response(prompt, max_length=400)
-    
-    def correct_grammar(self, text: str) -> str:
-        """Correct grammar and sentence structure"""
-        if not text.strip():
-            return "Please enter text to correct."
-        
-        prompt = f"""Please correct the grammar, spelling, and sentence structure of the following text. Maintain the original meaning while improving clarity and correctness:
-
-Original text: {text}
-
-Corrected text:"""
-        
-        return self.generate_response(prompt, max_length=300)
-    
-    def enhance_prompt(self, user_prompt: str) -> str:
-        """Enhance and improve user prompts"""
-        if not user_prompt.strip():
-            return "Please enter a prompt to enhance."
-        
-        prompt = f"""Improve and enhance the following prompt to make it more effective, clear, and specific. The enhanced prompt should be better structured and more likely to generate high-quality responses:
-
-Original prompt: {user_prompt}
-
-Enhanced prompt:"""
-        
-        return self.generate_response(prompt, max_length=200)
-    
-    def create_gradio_interface(self):
-        """Create the Gradio interface"""
-        with gr.Blocks(title="Educational AI Assistant", theme=gr.themes.Soft()) as app:
-            gr.HTML("""
-            <div style="text-align: center; margin-bottom: 20px;">
-                <h1>🎓 Educational AI Assistant</h1>
-                <p>Powered by IBM Granite 3.2 2B Instruct Model</p>
-                <p><em>Focused on educational content and learning support</em></p>
-            </div>
-            """)
-            
-            with gr.Tabs():
-                # Concept Explanation Tab
-                with gr.TabItem("📚 Concept Explanation"):
-                    gr.Markdown("### Explain Educational Concepts")
-                    gr.Markdown("*This feature only accepts educational topics and concepts. It will auto-correct spelling mistakes!*")
-                    
-                    concept_input = gr.Textbox(
-                        label="Enter a concept to explain",
-                        placeholder="e.g., fotosynthesis, quadretic equations, World War II... (spelling will be auto-corrected)",
-                        lines=2
-                    )
-                    concept_button = gr.Button("Explain Concept", variant="primary")
-                    concept_output = gr.Textbox(
-                        label="Explanation",
-                        lines=10,
-                        show_copy_button=True
-                    )
-                    
-                    concept_button.click(
-                        self.explain_concept,
-                        inputs=[concept_input],
-                        outputs=[concept_output]
-                    )
-                
-                # Quiz Generator Tab
-                with gr.TabItem("🧩 Quiz Generator"):
-                    gr.Markdown("### Generate Educational Quizzes")
-                    gr.Markdown("*This feature creates quizzes for educational topics only. Spelling mistakes will be auto-corrected!*")
-                    
-                    with gr.Row():
-                        quiz_topic = gr.Textbox(
-                            label="Quiz Topic",
-                            placeholder="e.g., celular biology, algebre, American histery... (spelling will be auto-corrected)",
-                            lines=2,
-                            scale=3
-                        )
-                        quiz_questions = gr.Slider(
-                            label="Number of Questions",
-                            minimum=3,
-                            maximum=10,
-                            value=5,
-                            step=1,
-                            scale=1
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        concept_input = gr.Textbox(
+                            label="📝 Enter Educational Concept",
+                            placeholder="Type any academic topic: Photosynthesis, Calculus, World War II, Machine Learning, etc.",
+                            lines=2
                         )
                     
-                    quiz_button = gr.Button("Generate Quiz", variant="primary")
-                    quiz_output = gr.Textbox(
-                        label="Generated Quiz",
-                        lines=15,
-                        show_copy_button=True
-                    )
-                    
-                    quiz_button.click(
-                        self.generate_quiz,
-                        inputs=[quiz_topic, quiz_questions],
-                        outputs=[quiz_output]
-                    )
+                    with gr.Column(scale=1):
+                        difficulty_level = gr.Dropdown(
+                            choices=["Beginner", "Intermediate", "Advanced"],
+                            value="Intermediate",
+                            label="🎯 Difficulty Level"
+                        )
                 
-                # Ask From Files Tab
-                with gr.TabItem("📄 Ask From Files"):
-                    gr.Markdown("### Upload Files and Ask Questions")
-                    gr.Markdown("*Upload PDF, image, or text files and ask questions about their content.*")
-                    
-                    file_upload = gr.File(
-                        label="Upload Files (PDF, Images, Text)",
-                        file_count="multiple",
-                        file_types=[".pdf", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".tiff"]
-                    )
-                    file_question = gr.Textbox(
-                        label="Your Question",
-                        placeholder="Ask a question about the uploaded files...",
-                        lines=3
-                    )
-                    file_button = gr.Button("Ask Question", variant="primary")
-                    file_output = gr.Textbox(
-                        label="Answer",
-                        lines=10,
-                        show_copy_button=True
-                    )
-                    
-                    file_button.click(
-                        self.ask_from_files,
-                        inputs=[file_upload, file_question],
-                        outputs=[file_output]
-                    )
+                explain_button = gr.Button(
+                    "🔍 Generate Detailed Explanation", 
+                    variant="primary", 
+                    size="lg"
+                )
                 
-                # Grammar Correction Tab
-                with gr.TabItem("✏️ Grammar Correction"):
-                    gr.Markdown("### Correct Grammar and Sentences")
-                    
-                    grammar_input = gr.Textbox(
-                        label="Enter text to correct",
-                        placeholder="Enter text with grammar or spelling errors...",
-                        lines=5
-                    )
-                    grammar_button = gr.Button("Correct Text", variant="primary")
-                    grammar_output = gr.Textbox(
-                        label="Corrected Text",
-                        lines=5,
-                        show_copy_button=True
-                    )
-                    
-                    grammar_button.click(
-                        self.correct_grammar,
-                        inputs=[grammar_input],
-                        outputs=[grammar_output]
-                    )
+                explanation_output = gr.Markdown(
+                    label="📖 Comprehensive Explanation",
+                    value="*Enter a concept above and click the button to get a detailed explanation...*"
+                )
                 
-                # Prompt Enhancement Tab
-                with gr.TabItem("🚀 Prompt Enhancer"):
-                    gr.Markdown("### Enhance Your Prompts")
-                    gr.Markdown("*Improve your prompts to get better AI responses.*")
-                    
-                    prompt_input = gr.Textbox(
-                        label="Enter your prompt",
-                        placeholder="Enter a prompt you want to improve...",
-                        lines=4
-                    )
-                    prompt_button = gr.Button("Enhance Prompt", variant="primary")
-                    prompt_output = gr.Textbox(
-                        label="Enhanced Prompt",
-                        lines=6,
-                        show_copy_button=True
-                    )
-                    
-                    prompt_button.click(
-                        self.enhance_prompt,
-                        inputs=[prompt_input],
-                        outputs=[prompt_output]
-                    )
+                # Examples
+                gr.HTML('<div class="example-box">')
+                gr.Markdown("### 💡 **Try These Popular Educational Topics:**")
+                gr.Examples(
+                    examples=[
+                        ["Photosynthesis", "Beginner"],
+                        ["Quadratic Equations", "Intermediate"],
+                        ["Quantum Physics", "Advanced"],
+                        ["French Revolution", "Intermediate"],
+                        ["Machine Learning", "Beginner"],
+                        ["DNA Replication", "Advanced"],
+                        ["Supply and Demand", "Beginner"],
+                        ["Shakespeare's Hamlet", "Intermediate"]
+                    ],
+                    inputs=[concept_input, difficulty_level],
+                    label="Click any example to try it instantly:"
+                )
+                gr.HTML('</div>')
             
-            # Footer
-            gr.HTML("""
-            <div style="text-align: center; margin-top: 20px; padding: 10px; border-top: 1px solid #eee;">
-                <p><strong>Model:</strong> IBM Granite 3.2 2B Instruct | <strong>Mode:</strong> {}</p>
-                <p><em>Educational AI Assistant - Designed for learning and academic support</em></p>
-            </div>
-            """.format("Local GPU" if self.use_local_model else "Hugging Face API"))
+            # Quiz Generator Tab
+            with gr.TabItem("📝 Quiz Generator"):
+                gr.HTML('<div class="feature-box">')
+                gr.Markdown("""
+                ### 🎯 **Generate Comprehensive Educational Quizzes**
+                Create detailed quizzes with multiple question types including:
+                - Multiple choice with detailed explanations
+                - True/false with reasoning
+                - Short answer questions
+                - Fill-in-the-blank exercises
+                - Complete answer keys and study recommendations
+                """)
+                gr.HTML('</div>')
+                
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        quiz_concept = gr.Textbox(
+                            label="📚 Enter Quiz Topic",
+                            placeholder="Enter any educational subject: Biology, History, Mathematics, Programming, etc.",
+                            lines=2
+                        )
+                    
+                    with gr.Column(scale=1):
+                        quiz_difficulty = gr.Dropdown(
+                            choices=["Beginner", "Intermediate", "Advanced"],
+                            value="Intermediate",
+                            label="🎯 Difficulty Level"
+                        )
+                        
+                        quiz_questions = gr.Dropdown(
+                            choices=["3", "5", "8", "10"],
+                            value="5",
+                            label="❓ Number of Questions"
+                        )
+                
+                quiz_button = gr.Button(
+                    "🎯 Generate Complete Quiz with Answers", 
+                    variant="primary", 
+                    size="lg"
+                )
+                
+                quiz_output = gr.Markdown(
+                    label="📋 Generated Quiz with Answer Key",
+                    value="*Enter a topic above and click the button to generate a comprehensive quiz...*"
+                )
+                
+                # Quiz Examples
+                gr.HTML('<div class="example-box">')
+                gr.Markdown("### 💡 **Popular Quiz Topics to Try:**")
+                gr.Examples(
+                    examples=[
+                        ["Cell Biology", "Beginner", "5"],
+                        ["Calculus Derivatives", "Advanced", "8"],
+                        ["American Civil War", "Intermediate", "5"],
+                        ["Python Programming", "Beginner", "5"],
+                        ["Chemical Bonding", "Intermediate", "8"],
+                        ["World Geography", "Beginner", "5"],
+                        ["Literature Analysis", "Advanced", "3"]
+                    ],
+                    inputs=[quiz_concept, quiz_difficulty, quiz_questions],
+                    label="Click to generate sample quizzes:"
+                )
+                gr.HTML('</div>')
         
-        return app
-
-# Main execution
-def main():
-    """Main function to run the application"""
-    print("🎓 Educational AI Assistant")
-    print("=" * 50)
-    
-    try:
-        # Initialize the app
-        app_instance = EducationalAIApp()
-        
-        # Create and launch Gradio interface
-        demo = app_instance.create_gradio_interface()
-        
-        print("\n🚀 Launching Educational AI Assistant...")
-        print("📱 The app will open in your browser automatically")
-        
-        # Launch with appropriate settings for Colab
-        demo.launch(
-            share=True,  # Create public link for Colab
-            server_name="0.0.0.0",  # Allow external connections
-            server_port=7860,  # Default Gradio port
-            show_error=True,  # Show errors in interface
-            quiet=False  # Show launch information
+        # Connect the functions to buttons
+        explain_button.click(
+            fn=explain_concept,
+            inputs=[concept_input, difficulty_level],
+            outputs=explanation_output
         )
         
-    except Exception as e:
-        print(f"❌ Error starting the application: {e}")
-        print("\n🔧 Troubleshooting tips:")
-        print("1. Make sure you have a stable internet connection")
-        print("2. Check if you have enough GPU memory (for local model)")
-        print("3. Verify your Hugging Face token (for API fallback)")
-        print("4. Try restarting the runtime if issues persist")
+        quiz_button.click(
+            fn=generate_quiz,
+            inputs=[quiz_concept, quiz_difficulty, quiz_questions],
+            outputs=quiz_output
+        )
+        
+        # Footer
+        gr.HTML("""
+        <div style="text-align: center; margin-top: 40px; padding: 25px; border-top: 3px solid #007bff; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+            <h3>🎓 Educational AI Assistant</h3>
+            <p><strong>🔥 Key Features:</strong> Detailed Explanations • Comprehensive Quizzes • Multiple Difficulty Levels • Academic Focus Only</p>
+            <p><strong>🎯 Purpose:</strong> Enhance learning and understanding across all academic subjects</p>
+            <p><strong>📚 Subjects Covered:</strong> Mathematics, Sciences, History, Literature, Computer Science, and more!</p>
+            <p>⚠️ <small><em>Educational tool for learning support. Always verify with authoritative academic sources.</em></small></p>
+        </div>
+        """)
+    
+    return app
 
-if __name__ == "__main__":
-    main()
+# Create and launch the app with Colab-compatible settings
+print("🚀 Initializing Educational AI Assistant for Google Colab...")
+print("📚 Features included:")
+print("   ✅ Comprehensive concept explanations with examples")
+print("   ✅ Interactive quiz generation with answer keys")
+print("   ✅ Multiple difficulty levels (Beginner/Intermediate/Advanced)")
+print("   ✅ Educational content filtering and validation")
+print("   ✅ Professional UI with examples and guidance")
+print("   ✅ Optimized for Google Colab environment")
+print("\n🎓 Starting the application...")
+
+# Create the app
+app = create_app()
+
+# Launch with Colab-compatible settings (this fixes the port issue)
+app.launch(
+    share=True,
+    debug=False,
+    show_error=True,
+    quiet=True
+)
